@@ -1048,7 +1048,6 @@ describe('json-refs', function () {
 
             jsonRefs.resolveRefs(json, options)
               .then(function (results) {
-                console.log(results.resolved);
                 assert.notDeepEqual(json, results.resolved);
 
                 // Make sure the original JSON is untouched
@@ -1065,7 +1064,7 @@ describe('json-refs', function () {
                   }
                 });
                 assert.deepEqual(results.resolved, {
-                  id: 'https://nonexistent-domain.edu/schema',
+                  id: 'https://nonexistent-domain.edu/schema#',
                   child: {
                     type: 'string'
                   },

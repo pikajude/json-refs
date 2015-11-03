@@ -511,9 +511,11 @@ function resolveRemoteRefs (json, options, parentPtr, parents, metadata) {
 
   // special case for shortcutting remote references that are actually local to the
   // document! this code is only involved if the schema.id is a URL as well as a URI
-  if (nodeUrl.parse('' + json.id).protocol !== null) {
-    json.id = computeUrl(json.id, json.id);
-    parentResolutionBase = json.id;
+  var parentUrl = nodeUrl.parse('' + json.id);
+
+  if (parentUrl.protocol !== null) {
+    delete parentUrl.hash;
+    parentResolutionBase = nodeUrl.format(parentUrl);
   }
 
   _.each(findRefs(json), function (ptr, refPtr) {

@@ -1031,6 +1031,55 @@ describe('json-refs', function () {
       });
 
       describe('remote', function () {
+        describe('remote-local references', function () {
+          it('short-circuits', function (done) {
+            var json = {
+              id: 'https://nonexistent-domain.edu/schema#',
+              child: {
+                $ref: 'https://nonexistent-domain.edu/schema#/definitions/Foo'
+              },
+              definitions: {
+                Foo: {
+                  type: 'string'
+                }
+              }
+            };
+            var cJson = _.cloneDeep(json);
+
+            jsonRefs.resolveRefs(json, options)
+              .then(function (results) {
+                console.log(results.resolved);
+                assert.notDeepEqual(json, results.resolved);
+
+                // Make sure the original JSON is untouched
+                assert.deepEqual(json, cJson);
+
+                assert.deepEqual(results.metadata, {
+                  '#/child': {
+                    circular: true,
+                    ref: 'https://nonexistent-domain.edu/schema#/definitions/Foo'
+                  },
+                  '#/child/child': {
+                    circular: true,
+                    ref: 'schema#/definitions/Foo'
+                  }
+                });
+                assert.deepEqual(results.resolved, {
+                  id: 'https://nonexistent-domain.edu/schema',
+                  child: {
+                    type: 'string'
+                  },
+                  definitions: {
+                    Foo: {
+                      type: 'string'
+                    }
+                  }
+                });
+              })
+              .then(done, done);
+          });
+        });
+
         describe('circular references', function () {
           it('ancestor (child)', function (done) {
             var json = {

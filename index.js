@@ -32,6 +32,7 @@ if (typeof Promise === 'undefined') {
 var _ = require('./lib/utils');
 var pathLoader = require('path-loader');
 var traverse = require('traverse');
+var nodeUrl = require('url');
 
 var remoteCache = {};
 var supportedSchemes = ['file', 'http', 'https'];
@@ -456,6 +457,7 @@ function realResolveRefs (json, options, metadata) {
 }
 
 function resolveRemoteRefs (json, options, parentPtr, parents, metadata) {
+  var getRemoteCallback, parentResolutionBase;
   var allTasks = Promise.resolve();
   var jsonT = traverse(json);
 
@@ -507,6 +509,13 @@ function resolveRemoteRefs (json, options, parentPtr, parents, metadata) {
     };
   }
 
+  // special case for shortcutting remote references that are actually local to the
+  // document! this code is only involved if the schema.id is a URL as well as a URI
+  if (nodeUrl.parse('' + json.id).protocol !== null) {
+    json.id = computeUrl(json.id, json.id);
+    parentResolutionBase = json.id;
+  }
+
   _.each(findRefs(json), function (ptr, refPtr) {
     if (isRemotePointer(ptr)) {
       allTasks = allTasks.then(function () {
@@ -515,46 +524,52 @@ function resolveRemoteRefs (json, options, parentPtr, parents, metadata) {
         var hash = '#' + (refParts[1] || '');
 
         if (_.isUndefined(parents[remoteLocation])) {
-          return getRemoteJson(remoteLocation, options)
-            .then(function (remoteJson) {
-              return remoteJson;
-            }, function (err) {
-              return err;
-            })
-            .then(function (response) {
-              var refBase = refParts[0];
-              var rOptions = _.cloneDeep(options);
-              var newParentPtr = combineRefs(parentPtr, refPtr);
+          getRemoteCallback = function (response) {
+            var refBase = refParts[0];
+            var rOptions = _.cloneDeep(options);
+            var newParentPtr = combineRefs(parentPtr, refPtr);
 
-              // Remove the last path segment
-              refBase = refBase.substring(0, refBase.lastIndexOf('/') + 1);
+            // Remove the last path segment
+            refBase = refBase.substring(0, refBase.lastIndexOf('/') + 1);
 
-              // Update the recursive location
-              rOptions.location = computeUrl(options.location, refBase);
+            // Update the recursive location
+            rOptions.location = computeUrl(options.location, refBase);
 
-              if (_.isError(response)) {
-                metadata[newParentPtr] = {
-                  err: response,
-                  missing: true,
-                  ref: ptr
-                };
-              } else {
-                // Record the parent
-                parents[remoteLocation] = {
-                  ref: parentPtr
-                };
+            if (_.isError(response)) {
+              metadata[newParentPtr] = {
+                err: response,
+                missing: true,
+                ref: ptr
+              };
+            } else {
+              // Record the parent
+              parents[remoteLocation] = {
+                ref: parentPtr
+              };
 
-                // Resolve remote references
-                return resolveRemoteRefs(response, rOptions, newParentPtr, parents, metadata)
-                  .then(function (rMetadata) {
-                    delete parents[remoteLocation];
+              // Resolve remote references
+              return resolveRemoteRefs(response, rOptions, newParentPtr, parents, metadata)
+                .then(function (rMetadata) {
+                  delete parents[remoteLocation];
 
-                    replaceRemoteRef(refPtr, ptr, remoteLocation, hash, rMetadata.resolved);
+                  replaceRemoteRef(refPtr, ptr, remoteLocation, hash, rMetadata.resolved);
 
-                    return rMetadata;
-                  });
+                  return rMetadata;
+                });
               }
-            });
+            };
+
+          if (parentResolutionBase === remoteLocation) {
+            return getRemoteCallback(json);
+          } else {
+            return getRemoteJson(remoteLocation, options)
+              .then(function (remoteJson) {
+                return remoteJson;
+              }, function (err) {
+                return err;
+              })
+              .then(getRemoteCallback);
+          }
         } else {
           // This is a circular reference
           replaceRemoteRef(refPtr, ptr, remoteLocation, hash);
